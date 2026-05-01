@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/auctions.db
+data/*.db-journal
+reports/*.md
+!reports/.gitkeep
+*.log
+.DS_Store
