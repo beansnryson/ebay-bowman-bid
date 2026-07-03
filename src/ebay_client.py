@@ -101,12 +101,11 @@ class EbayClient:
         If `players` is provided, runs targeted per-player searches —
         much faster and more precise than broad queries.
         """
-        now = datetime.now(timezone.utc)
-        end_max = now + timedelta(hours=hours_ahead)
-        end_filter = (
-            f"itemEndDate:[{now.strftime('%Y-%m-%dT%H:%M:%SZ')}.."
-            f"{end_max.strftime('%Y-%m-%dT%H:%M:%SZ')}]"
-        )
+        # Open-ended range only — Browse API rejects [start..end] for
+        # itemEndDate (errorId 12002) and silently drops the filter. Active
+        # listings can't end in the past, so [..end_max] gives the same window.
+        end_max = datetime.now(timezone.utc) + timedelta(hours=hours_ahead)
+        end_filter = f"itemEndDate:[..{end_max.strftime('%Y-%m-%dT%H:%M:%SZ')}]"
 
         seen: set[str] = set()
         if not players:
@@ -130,16 +129,18 @@ class EbayClient:
             params = {
                 "q": query,
                 "category_ids": SPORTS_CARDS_CATEGORY_ID,
-                "filter": (
-                    f"buyingOptions:{{AUCTION|AUCTION_WITH_BIN}},"
-                    f"{end_filter}"
-                ),
+                # AUCTION covers auction-with-BIN too; an invalid value here
+                # (e.g. AUCTION_WITH_BIN) makes eBay silently ignore the whole
+                # filter string — we learned this the hard way.
+                "filter": f"buyingOptions:{{AUCTION}},{end_filter}",
                 "limit": limit,
                 "offset": offset,
             }
             resp = requests.get(EBAY_BROWSE_URL, params=params, headers=self._headers(), timeout=60)
             resp.raise_for_status()
             data = resp.json()
+            for w in data.get("warnings", []) or []:
+                print(f"  API WARNING {w.get('errorId')}: {w.get('message')}", flush=True)
             items = data.get("itemSummaries", []) or []
             for item in items:
                 yield _to_listing(item)
